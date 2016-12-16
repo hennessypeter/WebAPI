@@ -1,0 +1,250 @@
+﻿<!DOCTYPE html>
+<html>
+<head>
+    <link href="https://cdnjs.cloudflare.com/ajax/libs/normalize/5.0.0/normalize.min.css" rel="stylesheet" />
+    <link href="css/custom.css" rel="stylesheet" />
+
+    <script src="http://ajax.aspnetcdn.com/ajax/jQuery/jquery-2.0.3.min.js"></script>
+    <script type="text/javascript" src="https://cdnjs.cloudflare.com/ajax/libs/Chart.js/2.4.0/Chart.bundle.min.js"></script>
+    <script src="js/main.js"></script>
+
+</head>
+<body>
+    <div style="width:100%;">
+        <canvas id="canvas"></canvas>
+    </div>
+    <div id="heat" class="backgroundd" style="width:100%;height:20px">
+
+    </div>
+    <div class="divI">
+        <img src="assets/info-icon-23.png" height="20" onclick="toggleStats();" />
+    </div>
+    <div class="divStats">
+        <table id="tblStats" style="display:none;">
+            <tr><td>Balance</td><td><div id="balance"></div></td></tr>
+            <tr><td>No Of Spins</td><td><div id="spins"></div></td></tr>
+            <tr><td>Avg No of Spins for free spins</td><td><div id="freespins"></div></td></tr>
+            <tr><td>RTP</td><td><div id="rtp"></div></td></tr>
+        </table>
+    </div>
+    <div id="footer" class="footer" style="width:100%;">
+        <div class='Center' align='center'>
+            <button id="btnStart" class="btn-bot" onclick="start();">Start</button>
+            <button id="btnStop" class="btn-bot" style="display:none;" onclick="stop();">Stop</button>
+            <button id="btnReStart" class="btn-bot" style="display:none;" onclick="restart();">Restart</button>
+
+        </div>
+    </div>
+
+
+
+
+
+</body>
+
+
+<script type="text/javascript">
+
+
+    var uri = 'api/ProportionValue';
+    var balance = 100;
+    var totalNoOfSpins = 0;
+    var currentNumberOfFreeSpins = 0;
+    var spinsSinceLastJackpot = 0;
+    var countOfFreeSpins = 0;
+    var change = 0;
+    var timerID = 0;
+    var latestLabel = 0;
+    var intHeatSpinCount = 20;
+    var intHeatMuliplier = 2;
+    var intFreeSpinMultiplier = 1;
+    var amountWonTotal = 0;
+    var rtp = 0;
+    Chart.defaults.global.maintainAspectRatio = false;
+
+    var config = {
+        type: 'line',
+        data: {
+            labels: [],
+            datasets: [{
+                data: [],
+                fill: false,
+                borderDash: [5, 5],
+            }]
+        },
+        options: {
+            responsive: true,
+            hover: {
+                mode: 'dataset'
+            },
+            legend: {
+                display: false
+            },
+            tooltips: {
+                enabled: false
+            },
+            scales: {
+                xAxes: [{
+                    display: true,
+                    stacked: true,
+                    ticks: {
+                        stepSize: 1,
+                        min: 0,
+                        autoSkip: false
+                    },
+                    scaleLabel: {
+                        display: false
+                    },
+                    gridLines: {
+                        display: false
+                    }
+                }],
+                yAxes: [{
+                    display: true,
+                    scaleLabel: {
+                        display: true,
+                        labelString: 'Balance'
+                    },
+                    ticks: {
+                        min: 0,
+                        max: 150
+                    }
+                }]
+            }
+        }
+    };
+
+
+    function go() {
+
+
+        var ctx = document.getElementById("canvas").getContext("2d");
+        ctx.canvas.width = 300;
+        ctx.canvas.height = 500;
+        var myChart = new Chart(ctx, config);
+        var cnt = 0;
+
+        var fn = function () {
+
+            var json = $.ajax({
+                'url': "api/ProportionValue/1",
+                'success': function (json) {
+
+                    // get json data
+                    // jackpot?
+                    if (json.SpinName == 'Jackpot!') {
+                        spinsSinceLastJackpot = 0
+                    }
+
+                    if (json.SpinName == 'Free Spins' && balance < 120) { // hack: if above 120 no free spins
+                        currentNumberOfFreeSpins = currentNumberOfFreeSpins + 10;
+                        countOfFreeSpins++;
+                    }
+
+                    if (currentNumberOfFreeSpins > 0) {
+                        balance = balance + json.Payback * intFreeSpinMultiplier; //  add the win
+                        currentNumberOfFreeSpins = currentNumberOfFreeSpins - 1;
+                    }
+                    else {
+                        balance = balance - 1; // 1 dollar game
+                        balance = balance + json.Payback; //  add the win
+                    }
+
+
+                    if (balance < 1) {
+                        clearInterval(timerID);
+                        $("#btnStop").hide();
+                        $("#btnReStart").show();
+                        $("#tblStats").show();
+                        $("#balance").text("0"); // could be .8767 so make 0 otherwise it rounds up to 1
+                    }
+
+                    spinsSinceLastJackpot++;
+                    totalNoOfSpins++;
+                    amountWonTotal = amountWonTotal + json.Payback;
+                    rtp = amountWonTotal / (totalNoOfSpins - countOfFreeSpins);
+
+
+
+                    // update ui
+                    $("#balance").text(Math.round(balance));
+                    $("#spins").text(totalNoOfSpins);
+                    $("#freespins").text(Math.round(totalNoOfSpins / countOfFreeSpins));
+                    $("#rtp").text(Math.round(rtp * 100) + "%");
+
+                    var date = new Date(null);
+                    date.setSeconds(totalNoOfSpins * 5); // specify value for SECONDS here
+                    $("#minutes").text(date.toISOString().substr(11, 8));
+                    
+                    // insert new point
+                    myChart.data.labels.push(json.SpinName);
+                    myChart.data.datasets[0].data.push(balance);
+                    
+
+                    // remove point
+                    if (totalNoOfSpins > 300) {
+
+                        myChart.data.labels.splice(0, 1);
+                        myChart.data.datasets[0].data.splice(0, 1);
+                    }
+
+
+
+                    var sizeOfChart = myChart.data.datasets[0].data.length;
+                    var change;
+                    var balanceb4 = 0;
+                    if (sizeOfChart > intHeatSpinCount) {
+
+
+                        balanceb4 = myChart.data.datasets[0].data[sizeOfChart - intHeatSpinCount];
+                        change = (balanceb4 - balance) * 3 + 50;
+
+                        $("#minutes").text(change);
+                        // update heat
+                        var val = change;
+                        var h = Math.floor((100 - val));
+                        var s = Math.abs(val - 50) / 50;
+                        var v = 1;
+
+
+                        $("#heat").css("background-color", hsv2rgb(h, s, 1));
+                    }
+
+                    myChart.update();
+                    cnt++;
+
+                    
+                }
+            });
+
+        };
+        timerID = window.setInterval(fn, 100);
+    };
+
+    function stop() {
+        $("#btnStop").hide();
+        $("#btnStart").show();
+        clearInterval(timerID);
+    }
+    function start() {
+        $("#btnStart").hide();
+        $("#btnStop").show();
+        go();
+    }
+
+    function restart() {
+        balance = 100;
+
+        $("#btnReStart").hide();
+        $("#btnStop").show();
+        go();
+    }
+
+    function toggleStats() {
+        $("#tblStats").toggle();
+    }
+
+
+
+</script>
+</html>

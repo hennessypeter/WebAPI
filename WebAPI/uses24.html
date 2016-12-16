@@ -1,0 +1,276 @@
+﻿<!DOCTYPE html>
+<html>
+<head>
+    <link href="https://cdnjs.cloudflare.com/ajax/libs/normalize/5.0.0/normalize.min.css" rel="stylesheet" />
+    <link href="css/custom.css" rel="stylesheet" />
+
+      <script src="http://ajax.aspnetcdn.com/ajax/jQuery/jquery-2.0.3.min.js"></script>
+    <script type="text/javascript" src="https://cdnjs.cloudflare.com/ajax/libs/Chart.js/2.4.0/Chart.bundle.min.js"></script>
+    <script src="js/main.js"></script>
+
+</head>
+<body>
+    <div style="width:100%;height:80%">
+        <canvas id="canvas"></canvas>
+    </div>
+    <div class="mydiv">
+        <button id="btnStart" onclick="start();">Start</button>
+        <button id="btnStop" style="display:none;" onclick="stop();">Stop</button>
+        <button id="btnReStart" style="display:none;" onclick="restart();">Restart</button>
+        <table>
+            <tr><td>Balance</td><td><div id="balance"></div></td></tr>
+            <tr><td>No Of Spins</td><td><div id="spins"></div></td></tr>
+            <tr><td>Avg No of Spins for free spins</td><td><div id="freespins"></div></td></tr>   
+            <tr><td>Minutes Played</td><td><div id="minutes"></div></td></tr>          
+        </table>
+    </div>
+    <div id="heat" class="backgroundd" style="width:100%;height:20px">
+        
+    </div>
+
+    
+   
+</body>
+
+
+<script type="text/javascript">
+
+
+    var uri = 'api/ProportionValue';
+    var balance = 100;
+    var totalNoOfSpins = 0;
+    var currentNumberOfFreeSpins = 0;
+    var spinsSinceLastJackpot = 0;
+    var countOfFreeSpins = 0;
+    var change = 0;
+    var timerID = 0;
+    var latestLabel = 0;
+    var intHeatSpinCount = 40;
+    var intHeatMuliplier = 2;
+    var intFreeSpinMultiplier = 1;
+
+
+
+
+
+
+    var randomScalingFactor = function () {
+        return Math.round(Math.random() * 100 * (Math.random() > 0.5 ? -1 : 1));
+    };
+    var randomColorFactor = function () {
+        return Math.round(Math.random() * 255);
+    };
+    var randomColor = function (opacity) {
+        return 'rgba(' + randomColorFactor() + ',' + randomColorFactor() + ',' + randomColorFactor() + ',' + (opacity || '.3') + ')';
+    };
+    var config = {
+        type: 'line',
+        data: {
+            labels: [],
+            datasets: [{           
+                data: [],
+                fill: false,
+                borderDash: [5, 5],
+            }]
+        },
+        options: {
+            responsive: true,
+            hover: {
+                mode: 'dataset'
+            },
+            legend: {
+                display: false
+            },
+            tooltips: {
+                enabled: false
+            },
+            scales: {
+                xAxes: [{
+                    display: true,
+                    stacked: true,
+                    ticks: {
+                        stepSize: 1,
+                        min: 0,
+                        autoSkip: false
+                    },
+                    scaleLabel: {
+                        display: false
+                    },
+                    gridLines: {
+                        display: false
+                    }
+                }],
+                yAxes: [{
+                    display: true,                    
+                    scaleLabel: {
+                        display: true,
+                        labelString: 'Balance'
+                    },
+                    ticks: {
+                        min: 0,
+                        max: 150
+                    }
+                }]
+            }
+        }
+    };
+    config.data.datasets.forEach(function (i, dataset) {
+        dataset.borderColor = randomColor(0.4);
+        dataset.backgroundColor = randomColor(0.5);
+        dataset.pointBorderColor = randomColor(0.7);
+        dataset.pointBackgroundColor = randomColor(0.5);
+        dataset.pointBorderWidth = 5;
+    });
+
+     function go() {
+        var ctx = document.getElementById("canvas").getContext("2d");
+        
+        var myChart = new Chart(ctx, config);
+        var cnt = 0;
+
+        var fn = function () {
+
+            var json = $.ajax({
+                'url': "api/ProportionValue/1",
+                'success': function (json) {
+
+                    // get json data
+                    // jackpot?
+                    if (json.SpinName == 'Jackpot!') {
+                        spinsSinceLastJackpot = 0
+                    }
+
+                    if (json.SpinName == 'Free Spins' && balance < 120) { // hack: if above 120 no free spins
+                        currentNumberOfFreeSpins = currentNumberOfFreeSpins + 10;
+                        countOfFreeSpins++;
+                       // freeSpinMsg();
+                    }
+
+                    if (currentNumberOfFreeSpins > 0) {
+                        balance = balance + json.Payback * intFreeSpinMultiplier; //  add the win
+                        currentNumberOfFreeSpins = currentNumberOfFreeSpins - 1;
+                    }
+                    else {
+                        balance = balance - 1; // 1 dollar game
+                        balance = balance + json.Payback; //  add the win
+                    }
+
+                    spinsSinceLastJackpot++;
+                    totalNoOfSpins++;
+
+
+                    // update ui
+                    $("#balance").text(Math.round(balance));
+                    $("#spins").text(totalNoOfSpins);
+                    $("#freespins").text(Math.round(totalNoOfSpins/ countOfFreeSpins));
+
+
+                    var date = new Date(null);
+                    date.setSeconds(totalNoOfSpins * 5); // specify value for SECONDS here
+                    $("#minutes").text(date.toISOString().substr(11, 8));
+
+
+             
+                    
+                    // insert new point
+                    myChart.data.labels.push(json.SpinName);
+                    myChart.data.datasets[0].data.push(balance);
+                    myChart.data.backgroundColor = "#000000";
+
+                    // remove point
+                    if (totalNoOfSpins > 300) {
+
+                        myChart.data.labels.splice(0, 1);
+                        myChart.data.datasets[0].data.splice(0, 1);
+                    }
+
+
+
+                    var sizeOfChart = myChart.data.datasets[0].data.length;
+                    var change;
+                    var balanceb4 = 0;
+                    if (sizeOfChart > intHeatSpinCount) {
+
+                        
+                        balanceb4 = myChart.data.datasets[0].data[sizeOfChart - intHeatSpinCount];
+                        change = balanceb4 - balance + 50;
+
+                        
+                        // update heat
+                        var val = change;
+                        var h = Math.floor((100 - val) * 120 / 100);
+                        var s = Math.abs(val - 50) / 50;
+                        var v = 1;
+                  
+
+                        $("#heat").css("background-color", hsv2rgb(h, s, 1));
+                    }
+
+                    myChart.update();
+                    cnt++;
+
+                    if (balance < 0)
+                    {
+                        clearInterval(timerID);
+                        $("#btnStop").hide();
+                        $("#btnReStart").show();
+                    }
+                }
+            });
+           
+        };
+         timerID = window.setInterval(fn, 50);
+    };
+
+    function stop() {
+        $("#btnStop").hide();
+        $("#btnStart").show();
+        clearInterval(timerID);
+    }
+    function start() {
+        $("#btnStart").hide();
+        $("#btnStop").show();
+        go();
+    }
+
+    function restart() {
+        balance = 100;
+
+        $("#btnReStart").hide();
+        $("#btnStop").show();
+        go();
+    }
+
+    function freeSpinMsg()
+    {
+      
+        var divsize = ((Math.random() * 100) + 100).toFixed();
+        var color = '#' + Math.round(0xffffff * Math.random()).toString(16);
+        $newdiv = $('<div><h3>Free Spins!!!</h3></div>').css({
+            'width': divsize + 'px',
+            'height': divsize/2 + 'px',
+            'background-color': color,
+            'opacity': .5,
+            'text-align': 'center',
+            'vertical-align': 'middle'
+
+        });
+
+        var posx = (Math.random() * ($(document).width() - divsize)).toFixed();
+        var posy = (Math.random() * ($(document).height() - divsize)).toFixed();
+
+        $newdiv.css({
+            'position': 'absolute',
+            'left': posx + 'px',
+            'top': posy + 'px',
+            'display': 'none'
+        }).appendTo('body').fadeIn(100).delay(300).fadeOut(200, function () {
+            $(this).remove();
+        });
+    }
+
+
+    
+
+</script>
+</html>

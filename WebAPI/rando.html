@@ -1,0 +1,145 @@
+﻿<!DOCTYPE html>
+<html>
+<head>
+    <title></title>
+    <meta charset="utf-8" />
+</head>
+<body>
+
+
+    <input type="text" id="prodId" size="5" value="100" />
+
+
+    <a onclick="start();">Start</a><br />
+    <a onclick="stop();">Stop</a>
+
+
+    <div id="heat" style="background-color:blueviolet;height:100px;width:100px"></div>
+
+    <table>
+        <tr><td>Balance</td><td><div id="balance"></div></td></tr>
+        <tr><td>No Of Spins</td><td><div id="spins"></div></td></tr>
+        <tr><td>Free Spins</td><td><div id="freespins"></div></td></tr>
+        <tr><td>Spins since last Jackpot</td><td><div id="spinsSinceLastJackpot"></div></td></tr>
+        <tr><td>Change</td><td><div id="change"></div></td></tr>
+    </table>
+
+    <script src="//www.chartjs.org/assets/Chart.min.js"></script>
+    <canvas id="updating-chart"></canvas>
+
+    <script src="http://ajax.aspnetcdn.com/ajax/jQuery/jquery-2.0.3.min.js"></script>
+    <script src="js/main.js"></script>
+
+    <script>
+
+        $(document).ready(function () {
+
+            var val = 2;
+            var h = Math.floor((100 - val) * 120 / 100);
+            var s = Math.abs(val - 50) / 50;
+            var v = 1;
+
+            $("#heat").css("background-color", hsv2rgb(h, s, 1));
+
+
+
+        });
+
+        var uri = 'api/ProportionValue';
+        var balance = 100;
+        var totalNoOfSpins = 0;
+        var numberOfFreeSpins = 0;
+        var spinsSinceLastJackpot = 0;
+        var change = 0;
+        var timerID = 0;
+        var latestLabel = 0;
+
+
+
+
+
+
+        function start() {
+
+
+            var canvas = document.getElementById('updating-chart'),
+                        ctx = canvas.getContext('2d'),
+                        startingData = {
+                             labels: [],
+                              datasets: [
+                                         {
+                                            fillColor: "rgba(220,220,220,0.2)",
+                                            strokeColor: "rgba(220,220,220,1)",
+                                            pointColor: "rgba(220,220,220,1)",
+                                            pointStrokeColor: "#fff"
+            },
+        ]
+    }
+
+
+            ctx.canvas.width = window.innerWidth * .8;
+            ctx.canvas.height = window.innerHeight * .8;
+
+            // Reduce the animation steps for demo clarity.
+            var myLiveChart = new Chart(ctx).Line(startingData, { animation: false });
+            
+            timerID = setInterval(function () {
+                
+                var json = $.ajax({
+                    'url': "api/ProportionValue/1",
+                    'success': function (json) {
+
+
+                        // jackpot?
+                        if (json.SpinName == 'Jackpot!') {
+                            spinsSinceLastJackpot = 0
+                        }
+
+                        if (json.SpinName == 'Free Spins') {
+                            numberOfFreeSpins = numberOfFreeSpins + 15;
+                        }
+
+                        if (numberOfFreeSpins > 0) {
+                            balance = balance + json.Payback * 2; //  add the win
+                            numberOfFreeSpins = numberOfFreeSpins - 1;
+                        }
+                        else {
+                            balance = balance - 1; // 1 dollar game
+                            balance = balance + json.Payback; //  add the win
+                        }
+
+                        spinsSinceLastJackpot++;
+                        totalNoOfSpins++;
+
+                        //var balanceb4 = myLiveChart.datasets[0].points[latestLabel].value;
+                        //    $("#Change").text([balance - balanceb4]);
+
+                        // update ui
+                        $("#balance").text(balance);
+                        $("#spins").text(totalNoOfSpins);
+                        $("#freespins").text(numberOfFreeSpins);
+                        $("#spinsSinceLastJackpot").text(spinsSinceLastJackpot);
+
+                        myLiveChart.addData([balance], json.SpinName);
+
+
+                        // Remove the first point so we dont just add values forever
+                        latestLabel++;
+                        if (latestLabel > 100) {
+                            myLiveChart.removeData();
+                        }
+                    }
+                });
+
+            }, 100);
+
+        }
+
+        function stop() {
+
+            clearInterval(timerID);
+        }
+
+    </script>
+</body>
+</html>
